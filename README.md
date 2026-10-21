@@ -59,10 +59,6 @@ Alternatively, open the project folder in Visual Studio Code and use the **Live 
 - Implement a functional emergency alert system
 - Improve disaster risk visualization
 
-## 👥 Team
-
-**Jugaadu Hackers**
-
 ## 📌 Project Status
 
 Prototype / recovered web interface. Further development is required for validated real-time disaster prediction.
