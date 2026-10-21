@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Disaster Map - Interactive UI</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <style>
+        #map { height: calc(100vh - 64px); }
+        .sidebar { transition: transform 0.3s ease; }
+        .sidebar-hidden { transform: translateX(-100%); }
+        .pulse { animation: pulse 2s infinite; }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+        .autocomplete-dropdown { max-height: 200px; overflow-y: auto; }
+        @media (min-width: 768px) {
+            .sidebar { transform: translateX(0); }
+            .sidebar-hidden { transform: translateX(0); }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex flex-col h-screen">
+    <!-- Header -->
+    <header class="bg-blue-600 text-white p-4 flex justify-between items-center">
+        <h1 class="text-xl font-bold">Equflope Maps</h1>
+        <button id="toggleSidebar" class="md:hidden focus:outline-none">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+        </button>
+    </header>
+
+    <!-- Main Content -->
+    <div class="flex flex-1 overflow-hidden">
+        <!-- Sidebar -->
+        <div id="sidebar" class="sidebar bg-white w-full md:w-80 p-4 absolute md:static z-10 shadow-lg">
+            <div class="relative mb-4">
+                <input type="text" id="locationInput" class="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Enter location (e.g., Mumbai)" oninput="showAutocomplete()">
+                <div id="autocompleteDropdown" class="absolute w-full bg-white border rounded mt-1 hidden autocomplete-dropdown"></div>
+            </div>
+            <button id="searchButton" onclick="searchLocation()" class="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600 transition">Search</button>
+            <button onclick="sendSOS()" class="w-full bg-red-500 text-white p-2 rounded mt-2 hover:bg-red-600 pulse transition">SOS</button>
+            <div class="mt-4">
+                <button id="toggleHistorical" class="w-full bg-gray-200 p-2 rounded mb-2 hover:bg-gray-300">Show Historical Data</button>
+                <button id="togglePrediction" class="w-full bg-gray-200 p-2 rounded hover:bg-gray-300 hidden">Show Predictions</button>
+                <label class="flex items-center mt-2">
+                    <input type="checkbox" id="liveUpdateToggle" checked class="mr-2">
+                    <span>Enable Live Updates</span>
+                </label>
+            </div>
+            <div id="info" class="mt-4">
+                <h3 id="locationName" class="font-bold">Location: None</h3>
+                <p id="lastFlood">Last Flood: None</p>
+                <p id="lastEarthquake">Last Earthquake: None</p>
+                <p id="floodPrediction" class="hidden">Flood Prediction: None</p>
+                <p id="earthquakePrediction" class="hidden">Earthquake Prediction: None</p>
+            </div>
+        </div>
+
+        <!-- Map -->
+        <div id="map" class="flex-1"></div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // Initialize Leaflet map centered on India
+        let map = L.map('map').setView([20.5937, 78.9629], 5);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+
+        let marker = null;
+        let lastSearchedCoords = null;
+
+        // Mock data
+        const mockData = {
+            "Tokyo": {
+                coords: [35.6762, 139.6503],
+                lastFlood: "October 12, 2019",
+                lastEarthquake: "March 11, 2024",
+                floodPrediction: "High risk in June 2025",
+                earthquakePrediction: "Moderate risk in July 2025"
+            },
+            "San Francisco": {
+                coords: [37.7749, -122.4194],
+                lastFlood: "January 5, 2023",
+                lastEarthquake: "April 4, 2024",
+                floodPrediction: "Low risk in August 2025",
+                earthquakePrediction: "High risk in September 2025"
+            },
+            "Mumbai": {
+                coords: [19.0760, 72.8777],
+                lastFlood: "July 26, 2023",
+                lastEarthquake: "None recorded",
+                floodPrediction: "High risk in July 2025",
+                earthquakePrediction: "Low risk in 2025"
+            },
+            "Delhi": {
+                coords: [28.7041, 77.1025],
+                lastFlood: "August 15, 2022",
+                lastEarthquake: "November 12, 2023",
+                floodPrediction: "Moderate risk in August 2025",
+                earthquakePrediction: "Moderate risk in October 2025"
+            },
+            "Bangalore": {
+                coords: [12.9716, 77.5946],
+                lastFlood: "September 5, 2022",
+                lastEarthquake: "None recorded",
+                floodPrediction: "Moderate risk in June 2025",
+                earthquakePrediction: "Low risk in 2025"
+            },
+            "Kolkata": {
+                coords: [22.5726, 88.3639],
+                lastFlood: "June 20, 2023",
+                lastEarthquake: "None recorded",
+                floodPrediction: "High risk in July 2025",
+                earthquakePrediction: "Low risk in 2025"
+            },
+            "Chennai": {
+                coords: [13.0827, 80.2707],
+                lastFlood: "December 1, 2023",
+                lastEarthquake: "None recorded",
+                floodPrediction: "High risk in November 2025",
+                earthquakePrediction: "Low risk in 2025"
+            },
+            "Hyderabad": {
+                coords: [17.3850, 78.4867],
+                lastFlood: "October 14, 2020",
+                lastEarthquake: "None recorded",
+                floodPrediction: "Moderate risk in September 2025",
+                earthquakePrediction: "Low risk in 2025"
+            },
+            "Ahmedabad": {
+                coords: [23.0225, 72.5714],
+                lastFlood: "July 10, 2022",
+                lastEarthquake: "January 22, 2023",
+                floodPrediction: "Moderate risk in July 2025",
+                earthquakePrediction: "Moderate risk in 2025"
+            },
+            "Pune": {
+                coords: [18.5204, 73.8567],
+                lastFlood: "July 25, 2021",
+                lastEarthquake: "None recorded",
+                floodPrediction: "Moderate risk in August 2025",
+                earthquakePrediction: "Low risk in 2025"
+            },
+            "Jaipur": {
+                coords: [26.9124, 75.7873],
+                lastFlood: "August 14, 2022",
+                lastEarthquake: "None recorded",
+                floodPrediction: "Low risk in July 2025",
+                earthquakePrediction: "Low risk in 2025"
+            },
+            "Lucknow": {
+                coords: [26.8467, 80.9462],
+                lastFlood: "September 10, 2022",
+                lastEarthquake: "None recorded",
+                floodPrediction: "Moderate risk in August 2025",
+                earthquakePrediction: "Moderate risk in 2025"
+            },
+            "Patna": {
+                coords: [25.5941, 85.1376],
+                lastFlood: "September 28, 2019",
+                lastEarthquake: "April 28, 2023",
+                floodPrediction: "High risk in August 2025",
+                earthquakePrediction: "Moderate risk in 2025"
+            },
+            "Bhopal": {
+                coords: [23.2599, 77.4126],
+                lastFlood: "August 20, 2022",
+                lastEarthquake: "None recorded",
+                floodPrediction: "Moderate risk in July 2025",
+                earthquakePrediction: "Low risk in 2025"
+            },
+            "Thiruvananthapuram": {
+                coords: [8.5241, 76.9366],
+                lastFlood: "May 20, 2023",
+                lastEarthquake: "None recorded",
+                floodPrediction: "High risk in June 2025",
+                earthquakePrediction: "Low risk in 2025"
+            },
+            "Guwahati": {
+                coords: [26.1445, 91.7362],
+                lastFlood: "June 15, 2022",
+                lastEarthquake: "May 10, 2023",
+                floodPrediction: "High risk in July 2025",
+                earthquakePrediction: "High risk in 2025"
+            },
+            "Chandigarh": {
+                coords: [30.7333, 76.7794],
+                lastFlood: "July 8, 2023",
+                lastEarthquake: "February 12, 2023",
+                floodPrediction: "Low risk in July 2025",
+                earthquakePrediction: "Moderate risk in 2025"
+            }
+        };
+
+        // Mock live prediction
+        function getLivePrediction(location) {
+            return mockData[location] || {
+                lastFlood: "No data",
+                lastEarthquake: "No data",
+                floodPrediction: "No prediction available",
+                earthquakePrediction: "No prediction available"
+            };
+        }
+
+        // Autocomplete functionality
+        function showAutocomplete() {
+            const input = document.getElementById('locationInput').value.toLowerCase();
+            const dropdown = document.getElementById('autocompleteDropdown');
+            dropdown.innerHTML = '';
+            if (!input) {
+                dropdown.classList.add('hidden');
+                return;
+            }
+
+            const suggestions = Object.keys(mockData).filter(city => city.toLowerCase().includes(input));
+            if (suggestions.length === 0) {
+                dropdown.classList.add('hidden');
+                return;
+            }
+
+            suggestions.forEach(city => {
+                const div = document.createElement('div');
+                div.className = 'p-2 hover:bg-gray-100 cursor-pointer';
+                div.textContent = city;
+                div.onclick = () => {
+                    document.getElementById('locationInput').value = city;
+                    dropdown.classList.add('hidden');
+                    searchLocation();
+                };
+                dropdown.appendChild(div);
+            });
+            dropdown.classList.remove('hidden');
+        }
+
+        // Search location
+        function searchLocation() {
+            const location = document.getElementById('locationInput').value;
+            const searchButton = document.getElementById('searchButton');
+            if (!location) {
+                Swal.fire('Error', 'Please enter a location!', 'error');
+                return;
+            }
+
+            searchButton.disabled = true;
+            searchButton.textContent = 'Searching...';
+
+            fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(location)}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.length > 0) {
+                        const { lat, lon } = data[0];
+                        lastSearchedCoords = [lat, lon];
+                        map.setView([lat, lon], 10);
+
+                        if (marker) {
+                            marker.setLatLng([lat, lon]);
+                        } else {
+                            marker = L.marker([lat, lon]).addTo(map);
+                        }
+
+                        const liveData = getLivePrediction(location);
+                        marker.bindPopup(`
+                            <b>${location}</b><br>
+                            Last Flood: ${liveData.lastFlood}<br>
+                            Last Earthquake: ${liveData.lastEarthquake}
+                        `).openPopup();
+
+                        document.getElementById('locationName').textContent = `Location: ${location}`;
+                        document.getElementById('lastFlood').textContent = `Last Flood: ${liveData.lastFlood}`;
+                        document.getElementById('lastEarthquake').textContent = `Last Earthquake: ${liveData.lastEarthquake}`;
+                        document.getElementById('floodPrediction').textContent = `Flood Prediction: ${liveData.floodPrediction}`;
+                        document.getElementById('earthquakePrediction').textContent = `Earthquake Prediction: ${liveData.earthquakePrediction}`;
+                    } else {
+                        Swal.fire('Error', 'Location not found!', 'error');
+                    }
+                })
+                .catch(error => {
+                    console.error("Error fetching location:", error);
+                    Swal.fire('Error', 'Error finding location.', 'error');
+                })
+                .finally(() => {
+                    searchButton.disabled = false;
+                    searchButton.textContent = 'Search';
+                });
+        }
+
+        // SOS functionality
+        function sendSOS() {
+            Swal.fire({
+                title: 'Send SOS?',
+                text: 'This will send an emergency SMS with your location.',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Send',
+                cancelButtonText: 'Cancel'
+            }).then(result => {
+                if (result.isConfirmed) {
+                    const phoneNumber = "+919289649402";
+                    let message = "SOS: Emergency! ";
+
+                    if (navigator.geolocation) {
+                        navigator.geolocation.getCurrentPosition(
+                            position => {
+                                const { latitude, longitude } = position.coords;
+                                message += `My location: Lat ${latitude}, Lon ${longitude}. `;
+                                message += `Google Maps: https://maps.google.com/?q=${latitude},${longitude}`;
+                                window.location.href = `sms:${phoneNumber}?body=${encodeURIComponent(message)}`;
+                            },
+                            error => {
+                                console.error("Geolocation error:", error);
+                                if (lastSearchedCoords) {
+                                    message += `Last searched location: Lat ${lastSearchedCoords[0]}, Lon ${lastSearchedCoords[1]}. `;
+                                    message += `Google Maps: https://maps.google.com/?q=${lastSearchedCoords[0]},${lastSearchedCoords[1]}`;
+                                } else {
+                                    message += "No location available. Please help!";
+                                }
+                                window.location.href = `sms:${phoneNumber}?body=${encodeURIComponent(message)}`;
+                            }
+                        );
+                    } else {
+                        if (lastSearchedCoords) {
+                            message += `Last searched location: Lat ${lastSearchedCoords[0]}, Lon ${lastSearchedCoords[1]}. `;
+                            message += `Google Maps: https://maps.google.com/?q=${lastSearchedCoords[0]},${lastSearchedCoords[1]}`;
+                        } else {
+                            message += "No location available. Please help!";
+                        }
+                        window.location.href = `sms:${phoneNumber}?body=${encodeURIComponent(message)}`;
+                    }
+                }
+            });
+        }
+
+        // Toggle historical/prediction data
+        document.getElementById('toggleHistorical').onclick = () => {
+            document.getElementById('lastFlood').classList.remove('hidden');
+            document.getElementById('lastEarthquake').classList.remove('hidden');
+            document.getElementById('floodPrediction').classList.add('hidden');
+            document.getElementById('earthquakePrediction').classList.add('hidden');
+            document.getElementById('toggleHistorical').classList.add('hidden');
+            document.getElementById('togglePrediction').classList.remove('hidden');
+        };
+
+        document.getElementById('togglePrediction').onclick = () => {
+            document.getElementById('lastFlood').classList.add('hidden');
+            document.getElementById('lastEarthquake').classList.add('hidden');
+            document.getElementById('floodPrediction').classList.remove('hidden');
+            document.getElementById('earthquakePrediction').classList.remove('hidden');
+            document.getElementById('toggleHistorical').classList.remove('hidden');
+            document.getElementById('togglePrediction').classList.add('hidden');
+        };
+
+        // Sidebar toggle
+        document.getElementById('toggleSidebar').onclick = () => {
+            document.getElementById('sidebar').classList.toggle('sidebar-hidden');
+        };
+
+        // Live update interval
+        let liveUpdateInterval = setInterval(() => {
+            if (!document.getElementById('liveUpdateToggle').checked) return;
+            const location = document.getElementById('locationInput').value;
+            if (location && mockData[location]) {
+                const liveData = getLivePrediction(location);
+                document.getElementById('floodPrediction').textContent = `Flood Prediction: ${liveData.floodPrediction}`;
+                document.getElementById('earthquakePrediction').textContent = `Earthquake Prediction: ${liveData.earthquakePrediction}`;
+            }
+        }, 30000);
+
+        // Toggle live updates
+        document.getElementById('liveUpdateToggle').onchange = () => {
+            if (!document.getElementById('liveUpdateToggle').checked) {
+                clearInterval(liveUpdateInterval);
+            } else {
+                liveUpdateInterval = setInterval(() => {
+                    if (!document.getElementById('liveUpdateToggle').checked) return;
+                    const location = document.getElementById('locationInput').value;
+                    if (location && mockData[location]) {
+                        const liveData = getLivePrediction(location);
+                        document.getElementById('floodPrediction').textContent = `Flood Prediction: ${liveData.floodPrediction}`;
+                        document.getElementById('earthquakePrediction').textContent = `Earthquake Prediction: ${liveData.earthquakePrediction}`;
+                    }
+                }, 30000);
+            }
+        };
+    </script>
+</body>
+</html>
