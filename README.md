@@ -20,7 +20,7 @@ A web-based disaster map interface designed to display disaster-related informat
 - External libraries: Tailwind CSS and SweetAlert2
 
 ## 🖼️ Screenshot
-c:\Users\skt\Pictures\Screenshots\Screenshot (165).png
+DisasterGuard-AI Screenshot.png
 
 ## 📦 How to Run Locally
 
