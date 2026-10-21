@@ -9,6 +9,9 @@ A web-based disaster map interface designed to display disaster-related informat
 - 🆘 SOS button interface
 - 📊 Historical data and prediction display controls
 - 🌐 Location-based disaster information display
+ ## 🌐 Live Demo
+
+[🚀 Open DisasterGuard-AI](https://nitinn12.github.io/DisasterGuard-AI/)
 
 ## 🛠️ Tech Stack
 
